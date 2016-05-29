@@ -50,6 +50,7 @@
 -export([member/1]).
 -export([memory/1]).
 -export([select_fail/1]).
+-export([t_compare_insert/1]).
 -export([t_insert_new/1]).
 -export([t_repair_continuation/1]).
 -export([t_match_spec_run/1]).
@@ -141,7 +142,7 @@ all() ->
      t_init_table, t_whitebox, t_delete_all_objects,
      t_insert_list, t_test_ms, t_select_delete, t_ets_dets,
      memory, t_select_reverse, t_bucket_disappears,
-     select_fail, t_insert_new, t_repair_continuation,
+     select_fail, t_compare_insert, t_insert_new, t_repair_continuation,
      otp_5340, otp_6338, otp_6842_select_1000, otp_7665,
      otp_8732, meta_wb, grow_shrink, grow_pseudo_deleted,
      shrink_pseudo_deleted, {group, meta_smp}, smp_insert,
@@ -903,6 +904,34 @@ do_fill_dbag_using_lists(T,N) ->
 		  {N + N rem 2,integer_to_list(N + N rem 2)}]),
     do_fill_dbag_using_lists(T,N - 1). 
 
+%% Test ets::compare_insert/3
+t_compare_insert(Config) when is_list(Config) ->
+    ?line EtsMem = etsmem(),
+    ?line L = fill_sets_int(1000) ++ fill_sets_int(1000,[{write_concurrency,true}]),
+    F = fun (Tab, Type) when Type =:= set; Type =:= ordered_set ->
+                % Key exists, expected objects don't match
+                ?line false = ets:compare_insert(Tab, {3, "-3"}, {3, "-3"}),
+                ?line false = ets:compare_insert(Tab, {3, "-3"}, {-3, "-3"}),
+                % Key doesn't exist
+                ?line false = ets:compare_insert(Tab, {3333, "-3333"}, {3333, "-3333"}),
+                % Key exists, expected objects match
+                ?line true = ets:compare_insert(Tab, {3, "-3"}, {3, "3"}),
+                ?line true = ets:compare_insert(Tab, {3, "3"}, {3, "-3"});
+            (Tab, Type) when Type =:= bag; Type =:= duplicate_bag ->
+                % Unsupported table types
+                ?line {'EXIT', {badarg, _}} = (catch ets:compare_insert(Tab, {3, "-3"}, {3, "-3"})),
+                ?line {'EXIT', {badarg, _}} = (catch ets:compare_insert(Tab, {3, "-3"}, {-3, "-3"})),
+                ?line {'EXIT', {badarg, _}} = (catch ets:compare_insert(Tab, {3333, "-3333"}, {3333, "-3333"})),
+                ?line {'EXIT', {badarg, _}} = (catch ets:compare_insert(Tab, {3, "-3"}, {3, "3"})),
+                ?line {'EXIT', {badarg, _}} = (catch ets:compare_insert(Tab, {3, "3"}, {3, "-3"}))
+        end,
+    lists:foreach(
+      fun(Tab) ->
+              F(Tab, ets:info(Tab, type)),
+              ?line ets:delete(Tab)
+      end,
+      L),
+    ?line verify_etsmem(EtsMem).
 
 %% Test the insert_new function.
 t_insert_new(Config) when is_list(Config) ->
