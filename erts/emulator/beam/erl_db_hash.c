@@ -2143,7 +2143,7 @@ static int db_select_replace_hash(Process *p,
     DbTableHash *tb = &tbl->hash;
     struct mp_info mpi;
     Uint slot_ix = 0;
-    HashDbTerm **current = NULL, **initial = NULL, **iter = NULL;
+    HashDbTerm **current = NULL;
     HashDbTerm *new = NULL, *next = NULL;
     HashValue hval = INVALID_HASH;
     unsigned current_list_pos = 0;
@@ -2170,6 +2170,8 @@ static int db_select_replace_hash(Process *p,
 	return RetVal;				\
     } while(0)
 
+    /* Bag implementation presented both semantic consistency and performance issues */
+    ASSERT(!(tb->common.status & DB_BAG));
 
     if ((errcode = analyze_pattern(tb, pattern, &mpi)) != DB_ERROR_NONE) {
         RET_TO_BIF(NIL,errcode);
@@ -2194,7 +2196,6 @@ static int db_select_replace_hash(Process *p,
     }
 
 
-    initial = current;
     for(;;) {
         if ((*current) == NULL) {
             if (mpi.key_given) {  /* Key is bound */
@@ -2218,41 +2219,8 @@ static int db_select_replace_hash(Process *p,
                 }
                 current = &BUCKET(tb,slot_ix);
             }
-            initial = current;
         }
         else if ((*current)->hvalue == INVALID_HASH) {
-            current = &((*current)->next);
-        }
-        else if (tb->common.status & DB_BAG) {
-            match_res = db_match_dbterm(&tb->common, p, mpi.mp, 0,
-                                        &(*current)->dbterm, NULL, 0);
-            if (is_value(match_res) &&
-                is_value(key = db_getkey(tb->common.keypos, match_res)) &&
-                eq(key, GETKEY(tb, (*current)->dbterm.tpl)))
-            {
-                // we need to make sure we don't end up with duplicate objects;
-                // it's quite inefficient
-                int object_exists = 0;
-                for (iter = initial; *iter != NULL; iter = &((*iter)->next))
-                    if (((*iter)->hvalue != INVALID_HASH)
-                            && (*iter != *current)
-                            && db_eq(&tb->common, match_res, &(*iter)->dbterm))
-                    {
-                        object_exists = 1;
-                        break;
-                    }
-
-                if (!object_exists) {
-                    next = (*current)->next;
-                    hval = (*current)->hvalue;
-                    new = replace_dbterm(tb, *current, match_res);
-                    new->next = next;
-                    new->hvalue = hval;
-                    *current = new;
-                    ++got;
-                }
-            }
-            --num_left;
             current = &((*current)->next);
         }
         else {
@@ -2312,7 +2280,7 @@ static int db_select_replace_continue_hash(Process *p,
 {
     DbTableHash *tb = &tbl->hash;
     Uint slot_ix;
-    HashDbTerm **current = NULL, **initial = NULL, **iter = NULL;
+    HashDbTerm **current = NULL;
     HashDbTerm *new = NULL, *next = NULL;
     HashValue hval = INVALID_HASH;
     Eterm key;
@@ -2347,7 +2315,6 @@ static int db_select_replace_continue_hash(Process *p,
         goto done;
     }
     current = &BUCKET(tb,slot_ix);
-    initial = current;
 
     for(;;) {
         if ((*current) == NULL) {
@@ -2359,41 +2326,8 @@ static int db_select_replace_continue_hash(Process *p,
                 goto trap;
             }
             current = &BUCKET(tb,slot_ix);
-            initial = current;
         }
         else if ((*current)->hvalue == INVALID_HASH) {
-            current = &((*current)->next);
-        }
-        else if (tb->common.status & DB_BAG) {
-            match_res = db_match_dbterm(&tb->common, p, mp, 0,
-                                        &(*current)->dbterm, NULL, 0);
-            if (is_value(match_res) &&
-                is_value(key = db_getkey(tb->common.keypos, match_res)) &&
-                eq(key, GETKEY(tb, (*current)->dbterm.tpl)))
-            {
-                // we need to make sure we don't end up with duplicate objects;
-                // it's quite inefficient
-                int object_exists = 0;
-                for (iter = initial; *iter != NULL; iter = &((*iter)->next))
-                    if (((*iter)->hvalue != INVALID_HASH)
-                            && (*iter != *current)
-                            && db_eq(&tb->common, match_res, &(*iter)->dbterm))
-                    {
-                        object_exists = 1;
-                        break;
-                    }
-
-                if (!object_exists) {
-                    next = (*current)->next;
-                    hval = (*current)->hvalue;
-                    new = replace_dbterm(tb, *current, match_res);
-                    new->next = next;
-                    new->hvalue = hval;
-                    *current = new;
-                    ++got;
-                }
-            }
-            --num_left;
             current = &((*current)->next);
         }
         else {
