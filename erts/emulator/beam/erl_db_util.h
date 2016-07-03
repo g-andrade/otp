@@ -431,10 +431,11 @@ typedef struct dmc_err_info {
 /* This is call trace */
 #define DCOMP_CALL_TRACE ((Uint) 0x20)
 
-Binary *db_match_compile(Eterm *matchexpr, Eterm *guards,
-			 Eterm *body, int num_matches, 
-			 Uint flags, 
-			 DMCErrInfo *err_info);
+Binary *db_match_compile(Eterm *object_matches,
+             Eterm *state_matches, Eterm *guards,
+             Eterm *body, int num_matches,
+             Uint flags,
+             DMCErrInfo *err_info);
 /* Returns newly allocated MatchProg binary with refc == 0*/
 
 Eterm db_match_dbterm(DbTableCommon* tb, Process* c_p, Binary* bprog,

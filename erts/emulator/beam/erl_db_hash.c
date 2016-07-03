@@ -2288,8 +2288,8 @@ static int analyze_pattern(DbTableHash *tb, Eterm pattern,
 {
     Eterm *ptpl;
     Eterm lst, tpl, ttpl;
-    Eterm *matches,*guards, *bodies;
-    Eterm sbuff[30];
+    Eterm *object_matches, *state_matches, *guards, *bodies;
+    Eterm sbuff[40];
     Eterm *buff = sbuff;
     Eterm key = NIL;	       
     HashValue hval = NIL;      
@@ -2311,14 +2311,15 @@ static int analyze_pattern(DbTableHash *tb, Eterm pattern,
     }
 
     if (num_heads > 10) {
-	buff = erts_alloc(ERTS_ALC_T_DB_TMP, sizeof(Eterm) * num_heads * 3);
+	buff = erts_alloc(ERTS_ALC_T_DB_TMP, sizeof(Eterm) * num_heads * 4);
 	mpi->lists = erts_alloc(ERTS_ALC_T_DB_SEL_LIST,
 				sizeof(*(mpi->lists)) * num_heads);	
     }
 
-    matches = buff;
-    guards = buff + num_heads;
-    bodies = buff + (num_heads * 2);
+    object_matches = buff;
+    state_matches = buff + num_heads;
+    guards = buff + (num_heads * 2);
+    bodies = buff + (num_heads * 3);
 
     i = 0;
     for(lst = pattern; is_list(lst); lst = CDR(list_val(lst))) {
@@ -2331,15 +2332,24 @@ static int analyze_pattern(DbTableHash *tb, Eterm pattern,
 	    return DB_ERROR_BADPARAM;
 	}
 	ptpl = tuple_val(ttpl);
-	if (ptpl[0] != make_arityval(3U)) {
-	    if (buff != sbuff) { 
-		erts_free(ERTS_ALC_T_DB_TMP, buff);
-	    }
-	    return DB_ERROR_BADPARAM;
-	}
-	matches[i] = tpl = ptpl[1];
-	guards[i] = ptpl[2];
-	bodies[i] = body = ptpl[3];
+        if (ptpl[0] == make_arityval(3U)) {
+            object_matches[i] = tpl = ptpl[1];
+            state_matches[i] = am_Underscore;
+            guards[i] = ptpl[2];
+            bodies[i] = body = ptpl[3];
+        }
+        else if (ptpl[0] == make_arityval(4U)) {
+            object_matches[i] = tpl = ptpl[1];
+            state_matches[i] = ptpl[2];
+            guards[i] = ptpl[3];
+            bodies[i] = body = ptpl[4];
+        }
+        else {
+            if (buff != sbuff) {
+                erts_free(ERTS_ALC_T_DB_TMP, buff);
+            }
+            return DB_ERROR_BADPARAM;
+        }
 	if (!is_list(body) || CDR(list_val(body)) != NIL ||
 	    CAR(list_val(body)) != am_DollarUnderscore) {
 	    mpi->all_objects = 0;
@@ -2400,7 +2410,8 @@ static int analyze_pattern(DbTableHash *tb, Eterm pattern,
      * but then the select calls would not fail like they should on bad 
      * match specs that happen to specify non existent keys etc.
      */
-    if ((mpi->mp = db_match_compile(matches, guards, bodies,
+    if ((mpi->mp = db_match_compile(object_matches, state_matches,
+                                    guards, bodies,
 				    num_heads, DCOMP_TABLE, NULL)) 
 	== NULL) {
 	if (buff != sbuff) { 

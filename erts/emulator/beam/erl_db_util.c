@@ -315,7 +315,8 @@ typedef struct dmc_context {
     int stack_used;
     ErlHeapFragment *save;
     ErlHeapFragment *copy;
-    Eterm *matchexpr;
+    Eterm *objectexpr;
+    Eterm *stateexpr;
     Eterm *guardexpr;
     Eterm *bodyexpr;
     int num_match;
@@ -1035,12 +1036,12 @@ Binary *db_match_set_compile(Process *p, Eterm matchexpr,
     Eterm *hp;
     int n = 0;
     int num_heads;
-    int i;
+    int i, arity;
     Binary *mps = NULL;
     int compiled = 0;
-    Eterm *matches,*guards, *bodies;
+    Eterm *object_matches, *state_matches, *guards, *bodies;
     Eterm *buff;
-    Eterm sbuff[15];
+    Eterm sbuff[20];
 
     if (!is_list(matchexpr))
 	return NULL;
@@ -1053,19 +1054,23 @@ Binary *db_match_set_compile(Process *p, Eterm matchexpr,
 
     if (num_heads > 5) {
 	buff = erts_alloc(ERTS_ALC_T_DB_TMP,
-			  sizeof(Eterm) * num_heads * 3);
+			  sizeof(Eterm) * num_heads * 4);
     } else {
 	buff = sbuff;
     }
 
-    matches = buff;
-    guards = buff + num_heads;
-    bodies = buff + (num_heads * 2);
+    object_matches = buff;
+    state_matches = buff + num_heads;
+    guards = buff + (num_heads * 2);
+    bodies = buff + (num_heads * 3);
 
     i = 0;
     for (l = matchexpr; is_list(l); l = CDR(list_val(l))) {
 	t = CAR(list_val(l));
-	if (!is_tuple(t) || arityval((tp = tuple_val(t))[0]) != 3) {
+	if (!is_tuple(t)
+                || ((arity = arityval((tp = tuple_val(t))[0])) != 3
+                    && arity != 4))
+        {
 	    goto error;
 	}
 	if (!(flags & DCOMP_TRACE) || (!is_list(tp[1]) && 
@@ -1092,12 +1097,22 @@ Binary *db_match_set_compile(Process *p, Eterm matchexpr,
 		l2 = CDR(list_val(l2));
 	    }
 	}
-	matches[i] = t;
-	guards[i] = tp[2];
-	bodies[i] = tp[3];
+        if (arity == 3) {
+            object_matches[i] = t;
+            state_matches[i] = am_Underscore;
+            guards[i] = tp[2];
+            bodies[i] = tp[3];
+        }
+        else {
+            object_matches[i] = t;
+            state_matches[i] = tp[2];
+            guards[i] = tp[3];
+            bodies[i] = tp[4];
+        }
 	++i;
     }
-    if ((mps = db_match_compile(matches, guards, bodies,
+    if ((mps = db_match_compile(object_matches, state_matches,
+                                guards, bodies,
 				num_heads,
 				flags,
 				NULL)) == NULL) {
@@ -1136,10 +1151,10 @@ Eterm db_match_set_lint(Process *p, Eterm matchexpr, Uint flags)
     int n = 0;
     int num_heads;
     Binary *mp;
-    Eterm *matches,*guards, *bodies;
-    Eterm sbuff[15];
+    Eterm *object_matches, *state_matches, *guards, *bodies;
+    Eterm sbuff[20];
     Eterm *buff = sbuff;
-    int i;
+    int i, arity;
 
     if (!is_list(matchexpr)) {
 	add_dmc_err(err_info, "Match programs are not in a list.",
@@ -1158,20 +1173,24 @@ Eterm db_match_set_lint(Process *p, Eterm matchexpr, Uint flags)
 
     if (num_heads > 5) {
 	buff = erts_alloc(ERTS_ALC_T_DB_TMP,
-			  sizeof(Eterm) * num_heads * 3);
+			  sizeof(Eterm) * num_heads * 4);
     } 
 
-    matches = buff;
-    guards = buff + num_heads;
-    bodies = buff + (num_heads * 2);
+    object_matches = buff;
+    state_matches = buff + num_heads;
+    guards = buff + (num_heads * 2);
+    bodies = buff + (num_heads * 3);
 
     i = 0;
     for (l = matchexpr; is_list(l); l = CDR(list_val(l))) {
 	t = CAR(list_val(l));
-	if (!is_tuple(t) || arityval((tp = tuple_val(t))[0]) != 3) {
+	if (!is_tuple(t)
+                || ((arity = arityval((tp = tuple_val(t))[0])) != 3
+                    && arity != 4))
+        {
 	    add_dmc_err(err_info, 
 			"Match program part is not a tuple of "
-			"arity 3.", 
+			"arity 3 or 4.",
 			-1, 0UL, dmcError);
 	    goto done;
 	}
@@ -1200,12 +1219,22 @@ Eterm db_match_set_lint(Process *p, Eterm matchexpr, Uint flags)
 		l2 = CDR(list_val(l2));
 	    }
 	}
-	matches[i] = t;
-	guards[i] = tp[2];
-	bodies[i] = tp[3];
+        if (arity == 3) {
+	    object_matches[i] = t;
+            state_matches[i] = am_Underscore;
+	    guards[i] = tp[2];
+	    bodies[i] = tp[3];
+        }
+        else {
+            object_matches[i] = t;
+            state_matches[i] = tp[2];
+            guards[i] = tp[3];
+            bodies[i] = tp[4];
+        }
 	++i;
     }
-    mp = db_match_compile(matches, guards, bodies, num_heads,
+    mp = db_match_compile(object_matches, state_matches,
+                          guards, bodies, num_heads,
 			  flags, err_info); 
     if (mp != NULL) {
 	erts_bin_free(mp);
@@ -1311,7 +1340,8 @@ Eterm db_getkey(int keypos, Eterm obj)
 /*
 ** The actual compiling of the match expression and the guards
 */
-Binary *db_match_compile(Eterm *matchexpr, 
+Binary *db_match_compile(Eterm *object_matches,
+                         Eterm *state_matches,
 			 Eterm *guards, 
 			 Eterm *body,
 			 int num_progs,
@@ -1338,7 +1368,8 @@ Binary *db_match_compile(Eterm *matchexpr,
     context.stack_need = context.stack_used = 0;
     context.save = context.copy = NULL;
     context.num_match = num_progs;
-    context.matchexpr = matchexpr;
+    context.objectexpr = object_matches;
+    context.stateexpr = state_matches;
     context.guardexpr = guards;
     context.bodyexpr = body;
     context.err_info = err_info;
@@ -1357,7 +1388,7 @@ restart:
 	 ++context.current_match) { /* This loop is long, 
 				       too long */
 	memset(heap.vars, 0, heap.size * sizeof(*heap.vars));
-	t = context.matchexpr[context.current_match];
+	t = context.objectexpr[context.current_match];
 	context.stack_used = 0;
 	structure_checked = 0;
 	if (context.current_match < num_progs - 1) {
@@ -3325,7 +3356,7 @@ static DMCRet dmc_one_term(DMCContext *context,
 {
     Sint n;
     Eterm *hp;
-    Uint sz, sz2, sz3;
+    Uint sz, sz2, sz3, sz4;
     Uint i, j;
 
     switch (c & _TAG_PRIMARY_MASK) {
@@ -3337,21 +3368,26 @@ static DMCRet dmc_one_term(DMCContext *context,
 		*/
 		Eterm *save_hp;
 		ASSERT(heap->vars == heap->vars_def);
-		sz = sz2 = sz3 = 0;
+		sz = sz2 = sz3 = sz4 = 0;
 		for (j = 0; j < context->num_match; ++j) {
-		    sz += size_object(context->matchexpr[j]);
-		    sz2 += size_object(context->guardexpr[j]);
-		    sz3 += size_object(context->bodyexpr[j]);
+                    sz += size_object(context->objectexpr[j]);
+                    sz2 += size_object(context->stateexpr[j]);
+                    sz3 += size_object(context->guardexpr[j]);
+                    sz4 += size_object(context->bodyexpr[j]);
 		}
 		context->copy = 
-		    new_message_buffer(sz + sz2 + sz3 +
-				       context->num_match);
+		    new_message_buffer(sz + sz2 + sz3 + sz4 +
+				       (context->num_match * 2));
 		save_hp = hp = context->copy->mem;
-		hp += context->num_match;
+		hp += (context->num_match * 2);
 		for (j = 0; j < context->num_match; ++j) {
-		    context->matchexpr[j] = 
-			copy_struct(context->matchexpr[j], 
-				    size_object(context->matchexpr[j]), &hp, 
+		    context->objectexpr[j] =
+                        copy_struct(context->objectexpr[j],
+                                size_object(context->objectexpr[j]), &hp,
+                                &(context->copy->off_heap));
+		    context->stateexpr[j] =
+			copy_struct(context->stateexpr[j],
+				    size_object(context->stateexpr[j]), &hp,
 				    &(context->copy->off_heap));
 		    context->guardexpr[j] = 
 			copy_struct(context->guardexpr[j], 
@@ -3363,17 +3399,19 @@ static DMCRet dmc_one_term(DMCContext *context,
 				    &(context->copy->off_heap));
 		}
 		for (j = 0; j < context->num_match; ++j) {
-		    /* the actual expressions can be 
-		       atoms in their selves, place them first */
-		    *save_hp++ = context->matchexpr[j]; 
-		}
-		heap->size = match_compact(context->copy, 
+                    /* the actual expressions can be
+                       atoms in their selves, place them first */
+		    *save_hp++ = context->objectexpr[j];
+		    *save_hp++ = context->stateexpr[j];
+                }
+		heap->size = match_compact(context->copy,
 					   context->err_info);
 		for (j = 0; j < context->num_match; ++j) {
-		    /* restore the match terms, as they
-		       may be atoms that changed */
-		    context->matchexpr[j] = context->copy->mem[j];
-		}
+                    /* restore the match terms, as they
+                       may be atoms that changed */
+		    context->objectexpr[j] = context->copy->mem[j * 2];
+		    context->stateexpr[j] = context->copy->mem[(j * 2) + 1];
+                }
 		heap->vars = erts_alloc(ERTS_ALC_T_DB_MS_CMPL_HEAP,
 					heap->size*sizeof(DMCVariable));
 		sys_memset(heap->vars, 0, heap->size * sizeof(DMCVariable));
