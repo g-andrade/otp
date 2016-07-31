@@ -70,7 +70,7 @@
 #define DEFAULT_BUFSZ   4000
 
 /* According to zlib documentation, it can never exceed this */
-#define INFL_DICT_SZ    32768
+#define MAX_DICT_SZ    32768
 
 /* This flag is used in the same places, where zlib return codes
  * (Z_OK, Z_STREAM_END, Z_NEED_DICT) are. So, we need to set it to
@@ -254,7 +254,7 @@ static int zlib_output(ZLibData* d)
 
 static int zlib_inflate_get_dictionary(ZLibData* d)
 {
-    ErlDrvBinary* dbin = driver_alloc_binary(INFL_DICT_SZ);
+    ErlDrvBinary* dbin = driver_alloc_binary(MAX_DICT_SZ);
     uInt dlen = 0;
     int res = inflateGetDictionary(&d->s, (unsigned char*)dbin->orig_bytes, &dlen);
     if ((res == Z_OK) && (driver_output_binary(d->port, NULL, 0, dbin, 0, dlen) < 0)) {
@@ -370,6 +370,18 @@ static int zlib_inflate_chunk(ZLibData* d)
     else if (res == Z_STREAM_END) {
        d->inflate_eos_seen = 1;
     }
+    return res;
+}
+
+static int zlib_deflate_get_dictionary(ZLibData* d)
+{
+    ErlDrvBinary* dbin = driver_alloc_binary(MAX_DICT_SZ);
+    uInt dlen = 0;
+    int res = deflateGetDictionary(&d->s, (unsigned char*)dbin->orig_bytes, &dlen);
+    if ((res == Z_OK) && (driver_output_binary(d->port, NULL, 0, dbin, 0, dlen) < 0)) {
+        res = Z_ERRNO;
+    }
+    driver_free_binary(dbin);
     return res;
 }
 

@@ -392,6 +392,29 @@ int ZEXPORT deflateSetDictionary (strm, dictionary, dictLength)
 }
 
 /* ========================================================================= */
+int ZEXPORT deflateGetDictionary (strm, dictionary, dictLength)
+    z_streamp strm;
+    Bytef *dictionary;
+    uInt *dictLength;
+{
+    deflate_state *s;
+
+    /* check state */
+    if (strm == Z_NULL || strm->state == Z_NULL)
+        return Z_STREAM_ERROR;
+    s = strm->state;
+
+    /* copy dictionary */
+    if (dictionary != Z_NULL) {
+        deflate_state *s;
+        memcpy(dictionary, s->window, s->w_size);
+    }
+    if (dictLength != Z_NULL)
+        *dictLength = s->w_size;
+    return Z_OK;
+}
+
+/* ========================================================================= */
 int ZEXPORT deflateResetKeep (strm)
     z_streamp strm;
 {

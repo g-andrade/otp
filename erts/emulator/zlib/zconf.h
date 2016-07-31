@@ -49,6 +49,7 @@
 #  define deflateReset          z_deflateReset
 #  define deflateResetKeep      z_deflateResetKeep
 #  define deflateSetDictionary  z_deflateSetDictionary
+#  define deflateGetDictionary  z_deflateGetDictionary
 #  define deflateSetHeader      z_deflateSetHeader
 #  define deflateTune           z_deflateTune
 #  define deflate_copyright     z_deflate_copyright
@@ -502,6 +503,7 @@ typedef uLong FAR uLongf;
   #pragma map(inflateEnd,"INEND")
   #pragma map(inflateSync,"INSY")
   #pragma map(inflateSetDictionary,"INSEDI")
+  #pragma map(inflateGetDictionary,"INGEDI")
   #pragma map(compressBound,"CMBND")
   #pragma map(inflate_table,"INTABL")
   #pragma map(inflate_fast,"INFA")
