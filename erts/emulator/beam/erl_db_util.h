@@ -347,6 +347,7 @@ BIF_RETTYPE db_set_trace_control_word_1(BIF_ALIST_1);
 
 void db_initialize_util(void);
 Eterm db_getkey(int keypos, Eterm obj);
+Eterm db_setkey(Process* p, int keypos, Eterm obj, Eterm key);
 void db_cleanup_offheap_comp(DbTerm* p);
 void db_free_term(DbTable *tb, void* basep, Uint offset);
 void* db_store_term(DbTableCommon *tb, DbTerm* old, Uint offset, Eterm obj);

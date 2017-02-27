@@ -2216,22 +2216,25 @@ static int mtraversal_select_replace_on_match_res(void* context_ptr, Sint slot_i
     mtraversal_select_replace_context_t* sr_context_ptr = (mtraversal_select_replace_context_t*) context_ptr;
     DbTableHash* tb = sr_context_ptr->tb;
     Eterm key = NIL;
+    Eterm replacement_obj = NIL;
     HashDbTerm* new = NULL;
     HashDbTerm* next = NULL;
     HashValue hval = INVALID_HASH;
 
-    if (is_value(match_res) &&
-            is_value(key = db_getkey(tb->common.keypos, match_res)) &&
-            eq(key, GETKEY(tb, (**current_ptr_ptr)->dbterm.tpl)))
-    {
-        next = (**current_ptr_ptr)->next;
-        hval = (**current_ptr_ptr)->hvalue;
-        new = replace_dbterm(tb, **current_ptr_ptr, match_res);
-        new->next = next;
-        new->hvalue = hval;
-        **current_ptr_ptr = new; /* replace 'next' pointer in previous object */
-        *current_ptr_ptr = &((**current_ptr_ptr)->next); /* advance to next object */
-        return 1;
+    if (is_value(match_res)) {
+        /* Blindly overwrite key */
+        key = GETKEY(tb, (***current_ptr_ptr).dbterm.tpl);
+        replacement_obj = db_setkey(sr_context_ptr->p, tb->common.keypos, match_res, key);
+        if (is_value(replacement_obj)) {
+            next = (**current_ptr_ptr)->next;
+            hval = (**current_ptr_ptr)->hvalue;
+            new = replace_dbterm(tb, **current_ptr_ptr, replacement_obj);
+            new->next = next;
+            new->hvalue = hval;
+            **current_ptr_ptr = new; /* replace 'next' pointer in previous object */
+            *current_ptr_ptr = &((**current_ptr_ptr)->next); /* advance to next object */
+            return 1;
+        }
     }
     return 0;
 }

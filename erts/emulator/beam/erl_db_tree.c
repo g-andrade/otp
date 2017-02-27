@@ -3450,7 +3450,9 @@ static int doit_select_replace(DbTableTree *tb, TreeDbTerm **this, void *ptr,
                                int forward)
 {
     struct select_replace_context *sc = (struct select_replace_context *) ptr;
-    Eterm ret, key;
+    Eterm ret = NIL;
+    Eterm key = NIL;
+    Eterm replacement_obj = NIL;
 
     sc->lastobj = (*this)->dbterm.tpl;
 
@@ -3463,13 +3465,15 @@ static int doit_select_replace(DbTableTree *tb, TreeDbTerm **this, void *ptr,
     ret = db_match_dbterm(&tb->common, sc->p, sc->mp, 0,
 			  &(*this)->dbterm, NULL, 0);
 
-    if (is_value(ret) &&
-        is_value(key = db_getkey(tb->common.keypos, ret)) &&
-        (cmp_key(tb, key, *this) == 0))
-    {
-        *this = replace_dbterm(tb, *this, ret);
-        sc->lastobj = (*this)->dbterm.tpl;
-        ++(sc->replaced);
+    if (is_value(ret)) {
+        /* Blindly overwrite key */
+        key = GETKEY(tb, (*this)->dbterm.tpl);
+        replacement_obj = db_setkey(sc->p, sc->keypos, ret, key);
+        if (is_value(replacement_obj)) {
+            *this = replace_dbterm(tb, *this, replacement_obj);
+            sc->lastobj = (*this)->dbterm.tpl;
+            ++(sc->replaced);
+        }
     }
     if (--(sc->max) <= 0) {
 	return 0;

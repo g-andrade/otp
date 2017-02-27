@@ -1500,17 +1500,16 @@ is_integer(X), is_integer(Y), X + Y < 4711]]></code>
             tables of type <c>bag</c> are not yet supported.</p>
         </warning>
         <p>Matches the objects in the table <c><anno>Tab</anno></c> using a
-          <seealso marker="#match_spec">match_spec</seealso>. If the
-          an object is matched, and the match_spec result is an object with the
-          same key, the existing object is replaced with the match_spec result.
-          For any other result from the match_spec the object is kept
+          <seealso marker="#match_spec">match_spec</seealso>. If
+          an object is matched, and the match_spec result is an object of
+          compatible arity, the existing object is replaced with the match_spec
+          result. For any other result from the match_spec the object is kept
           unchanged.</p>
         <p>The function returns the number of objects actually
           replaced in the table.</p>
         <note>
-          <p>The <c>match_spec</c> has to return an object with the same key if
-            the object is to be replaced. No other return value will get the
-            object replaced.</p>
+          <p>If the key of the replacement object differs from the one in
+            the original object, it will be overwritten.</p>
         </note>
       </desc>
     </func>

@@ -1304,6 +1304,23 @@ Eterm db_getkey(int keypos, Eterm obj)
     return THE_NON_VALUE;
 }
 
+Eterm db_setkey(Process* p, int keypos, Eterm obj, Eterm key)
+{
+    if (is_tuple(obj) && is_value(key)) {
+        Eterm *tptr = tuple_val(obj);
+        Uint arity = arityval(*tptr);
+        if (arity >= keypos) {
+            size_t size = arity + 1;
+            Eterm* new_obj = HAlloc(p, size);
+            /* copy the tuple */
+            sys_memcpy(new_obj, tptr, sizeof(Eterm) * size);
+            new_obj[keypos] = key;
+            return make_tuple(new_obj);
+        }
+    }
+    return THE_NON_VALUE;
+}
+
 /*
 ** Matching compiled (executed by "Pam" :-)
 */
