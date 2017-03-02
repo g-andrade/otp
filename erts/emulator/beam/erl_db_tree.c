@@ -3351,7 +3351,9 @@ static int doit_select(DbTableTree *tb, TreeDbTerm *this, void *ptr,
 	return 0;
     }
     ret = db_match_dbterm(&tb->common,sc->p,sc->mp,sc->all_objects,
-			  &this->dbterm, &hp, 2);
+                          &this->dbterm,
+                          ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE,
+                          &hp, 2);
     if (is_value(ret)) {
 	sc->accum = CONS(hp, ret, sc->accum);
     }
@@ -3383,7 +3385,9 @@ static int doit_select_count(DbTableTree *tb, TreeDbTerm *this, void *ptr,
 	return 0;
     }
     ret = db_match_dbterm(&tb->common, sc->p, sc->mp, 0,
-			  &this->dbterm, NULL, 0);
+                          &this->dbterm,
+                          ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE,
+                          NULL, 0);
     if (ret == am_true) {
 	++(sc->got);
     }
@@ -3413,7 +3417,9 @@ static int doit_select_chunk(DbTableTree *tb, TreeDbTerm *this, void *ptr,
     }
 
     ret = db_match_dbterm(&tb->common, sc->p, sc->mp, sc->all_objects,
-			  &this->dbterm, &hp, 2);
+                          &this->dbterm,
+                          ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE,
+                          &hp, 2);
     if (is_value(ret)) {
 	++(sc->got);
 	sc->accum = CONS(hp, ret, sc->accum);
@@ -3449,7 +3455,9 @@ static int doit_select_delete(DbTableTree *tb, TreeDbTerm *this, void *ptr,
 			 GETKEY_WITH_POS(sc->keypos, this->dbterm.tpl)) > 0)
 	return 0;
     ret = db_match_dbterm(&tb->common, sc->p, sc->mp, 0,
-			  &this->dbterm, NULL, 0);
+                          &this->dbterm,
+                          ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE,
+                          NULL, 0);
     if (ret == am_true) {
 	key = GETKEY(sc->tb, this->dbterm.tpl);
 	linkout_tree(sc->tb, key);
@@ -3480,7 +3488,9 @@ static int doit_select_replace(DbTableTree *tb, TreeDbTerm **this, void *ptr,
 	return 0;
     }
     ret = db_match_dbterm(&tb->common, sc->p, sc->mp, 0,
-			  &(*this)->dbterm, NULL, 0);
+                          &(*this)->dbterm,
+                          ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE,
+                          NULL, 0);
 
     if (is_value(ret)) {
 #ifdef DEBUG

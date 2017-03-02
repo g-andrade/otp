@@ -1411,7 +1411,9 @@ static int match_traverse(Process* p, DbTableHash* tb,
         if (*current_ptr != NULL) {
             if ((*current_ptr)->hvalue != INVALID_HASH) {
                 match_res = db_match_dbterm(&tb->common, p, mpi.mp, 0,
-                                            &(*current_ptr)->dbterm, hpp, 2);
+                                            &(*current_ptr)->dbterm,
+                                            ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE,
+                                            hpp, 2);
                 saved_current = *current_ptr;
                 if (on_match_res(context_ptr, slot_ix, &current_ptr, match_res)) {
                     ++got;
@@ -1546,7 +1548,9 @@ static int match_traverse_continue(Process* p, DbTableHash* tb,
         if (*current_ptr != NULL) {
             if ((*current_ptr)->hvalue != INVALID_HASH) {
                 match_res = db_match_dbterm(&tb->common, p, *mpp, all_objects,
-                                            &(*current_ptr)->dbterm, hpp, 2);
+                                            &(*current_ptr)->dbterm,
+                                            ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE,
+                                            hpp, 2);
                 saved_current = *current_ptr;
                 if (on_match_res(context_ptr, slot_ix, &current_ptr, match_res)) {
                     ++got;
