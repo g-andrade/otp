@@ -3338,6 +3338,7 @@ static int doit_select(DbTableTree *tb, TreeDbTerm *this, void *ptr,
     struct select_context *sc = (struct select_context *) ptr;
     Eterm ret;
     Eterm* hp;
+    int copy_result_to_process_heap = 1;
 
     sc->lastobj = this->dbterm.tpl;
     
@@ -3352,11 +3353,12 @@ static int doit_select(DbTableTree *tb, TreeDbTerm *this, void *ptr,
     }
     ret = db_match_dbterm(&tb->common,sc->p,sc->mp,sc->all_objects,
                           &this->dbterm,
-                          ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE,
+                          copy_result_to_process_heap,
                           &hp, 2);
     if (is_value(ret)) {
 	sc->accum = CONS(hp, ret, sc->accum);
     }
+    db_match_dbterm_free(sc->p, copy_result_to_process_heap, ret);
     if (MBUF(sc->p)) {
 	/*
 	 * Force a trap and GC if a heap fragment was created. Many heap fragments
@@ -3375,6 +3377,7 @@ static int doit_select_count(DbTableTree *tb, TreeDbTerm *this, void *ptr,
 {
     struct select_count_context *sc = (struct select_count_context *) ptr;
     Eterm ret;
+    int copy_result_to_process_heap = 1;
 
     sc->lastobj = this->dbterm.tpl;
     
@@ -3386,11 +3389,12 @@ static int doit_select_count(DbTableTree *tb, TreeDbTerm *this, void *ptr,
     }
     ret = db_match_dbterm(&tb->common, sc->p, sc->mp, 0,
                           &this->dbterm,
-                          ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE,
+                          copy_result_to_process_heap,
                           NULL, 0);
     if (ret == am_true) {
 	++(sc->got);
     }
+    db_match_dbterm_free(sc->p, copy_result_to_process_heap, ret);
     if (--(sc->max) <= 0) {
 	return 0;
     }
@@ -3403,6 +3407,7 @@ static int doit_select_chunk(DbTableTree *tb, TreeDbTerm *this, void *ptr,
     struct select_context *sc = (struct select_context *) ptr;
     Eterm ret;
     Eterm* hp;
+    int copy_result_to_process_heap = 1;
 
     sc->lastobj = this->dbterm.tpl;
     
@@ -3418,12 +3423,13 @@ static int doit_select_chunk(DbTableTree *tb, TreeDbTerm *this, void *ptr,
 
     ret = db_match_dbterm(&tb->common, sc->p, sc->mp, sc->all_objects,
                           &this->dbterm,
-                          ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE,
+                          copy_result_to_process_heap,
                           &hp, 2);
     if (is_value(ret)) {
 	++(sc->got);
 	sc->accum = CONS(hp, ret, sc->accum);
     }
+    db_match_dbterm_free(sc->p, copy_result_to_process_heap, ret);
     if (MBUF(sc->p)) {
 	/*
 	 * Force a trap and GC if a heap fragment was created. Many heap fragments
@@ -3444,6 +3450,7 @@ static int doit_select_delete(DbTableTree *tb, TreeDbTerm *this, void *ptr,
     struct select_delete_context *sc = (struct select_delete_context *) ptr;
     Eterm ret;
     Eterm key;
+    int copy_result_to_process_heap = 1;
 
     if (sc->erase_lastterm)
 	free_term(tb, sc->lastterm);
@@ -3456,7 +3463,7 @@ static int doit_select_delete(DbTableTree *tb, TreeDbTerm *this, void *ptr,
 	return 0;
     ret = db_match_dbterm(&tb->common, sc->p, sc->mp, 0,
                           &this->dbterm,
-                          ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE,
+                          copy_result_to_process_heap,
                           NULL, 0);
     if (ret == am_true) {
 	key = GETKEY(sc->tb, this->dbterm.tpl);
@@ -3464,6 +3471,7 @@ static int doit_select_delete(DbTableTree *tb, TreeDbTerm *this, void *ptr,
 	sc->erase_lastterm = 1;
 	++sc->accum;
     }
+    db_match_dbterm_free(sc->p, copy_result_to_process_heap, ret);
     if (--(sc->max) <= 0) {
 	return 0;
     }
@@ -3478,6 +3486,7 @@ static int doit_select_replace(DbTableTree *tb, TreeDbTerm **this, void *ptr,
 #ifdef DEBUG
     Eterm key = NIL;
 #endif
+    int copy_result_to_process_heap = 1;
 
     sc->lastobj = (*this)->dbterm.tpl;
 
@@ -3501,6 +3510,7 @@ static int doit_select_replace(DbTableTree *tb, TreeDbTerm **this, void *ptr,
         sc->lastobj = (*this)->dbterm.tpl;
         ++(sc->replaced);
     }
+    db_match_dbterm_free(sc->p, copy_result_to_process_heap, ret);
     if (--(sc->max) <= 0) {
 	return 0;
     }

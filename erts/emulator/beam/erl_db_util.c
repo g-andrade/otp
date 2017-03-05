@@ -5325,31 +5325,44 @@ void db_free_tmp_uncompressed(DbTerm* obj)
 }
 
 Eterm db_match_dbterm(DbTableCommon* tb, Process* c_p, Binary* bprog,
-                      int all, DbTerm* obj, enum erts_pam_run_flags in_flags,
+                      int all, DbTerm* obj, int copy_result_to_process_heap,
                       Eterm** hpp, Uint extra)
 {
     Uint32 dummy;
     Eterm res;
+    enum erts_pam_run_flags pam_run_flags
+        = (copy_result_to_process_heap ?
+                ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE :
+                ERTS_PAM_TMP_RESULT);
 
     if (tb->compress) {
 	obj = db_alloc_tmp_uncompressed(tb, obj);
     }
 
-    res = db_prog_match(c_p, c_p,
+    res = db_prog_match((copy_result_to_process_heap ? c_p : NULL), 
+                        (copy_result_to_process_heap ? c_p : NULL),
                         bprog, make_tuple(obj->tpl), NULL, 0,
-			//ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE, &dummy);
-                        in_flags, &dummy);
+                        pam_run_flags, &dummy);
 
-    if (is_value(res) && hpp!=NULL && (in_flags & ERTS_PAM_COPY_RESULT)) {
+    if (is_value(res) && hpp!=NULL && copy_result_to_process_heap) {
 	*hpp = HAlloc(c_p, extra);
     }
 
     if (tb->compress) {
 	db_free_tmp_uncompressed(obj);
     }
+   
+    if (!copy_result_to_process_heap)
+        erts_fprintf(stderr, "match res: %T\n", res);
     return res;
 }
 
+void db_match_dbterm_free(Process* c_p, int copy_result_to_process_heap, Eterm result) {
+    if (copy_result_to_process_heap && is_value(result)) {
+        // TODO
+        erts_match_set_release_result(c_p);
+    }
+}
 
 #ifdef DMC_DEBUG
 

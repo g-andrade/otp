@@ -374,6 +374,7 @@ static Eterm build_term_list(Process* p, HashDbTerm* ptr1, HashDbTerm* ptr2,
 			   Uint sz, DbTableHash*);
 static int analyze_pattern(DbTableHash *tb, Eterm pattern,
                            extra_match_validator_t extra_validator, /* Optional callback */
+                           int copy_results_to_process_heap,        /* Boolean */
                            struct mp_info *mpi);
 
 /*
@@ -1323,11 +1324,12 @@ typedef int (*mtraversal_on_trap_t)(void* context_ptr, Sint slot_ix, Sint got, B
 static int match_traverse(Process* p, DbTableHash* tb,
                           Eterm pattern,
                           extra_match_validator_t extra_match_validator, /* Optional */
-                          Sint chunk_size,      /* If 0, no chunking */
-                          Sint iterations_left, /* Nr. of iterations left */
-                          Eterm** hpp,          /* Heap */
-                          int lock_for_write,   /* Set to 1 if we're going to delete or
-                                                   modify existing terms */
+                          int copy_results_to_process_heap,              /* Boolean */
+                          Sint chunk_size,                               /* If 0, no chunking */
+                          Sint iterations_left,                          /* Nr. of iterations left */
+                          Eterm** hpp,                                   /* Heap */
+                          int lock_for_write,                            /* Set to 1 if we're going to delete or
+                                                                            modify existing terms */
                           mtraversal_on_nothing_can_match_t on_nothing_can_match,
                           mtraversal_on_match_res_t on_match_res,
                           mtraversal_on_loop_ended_t on_loop_ended,
@@ -1360,7 +1362,8 @@ static int match_traverse(Process* p, DbTableHash* tb,
 
     *ret = NIL;
 
-    if ((ret_value = analyze_pattern(tb, pattern, extra_match_validator, &mpi))
+    if ((ret_value = analyze_pattern(tb, pattern, extra_match_validator, 
+                                     copy_results_to_process_heap, &mpi))
             != DB_ERROR_NONE)
     {
         goto done;
@@ -1412,13 +1415,14 @@ static int match_traverse(Process* p, DbTableHash* tb,
             if ((*current_ptr)->hvalue != INVALID_HASH) {
                 match_res = db_match_dbterm(&tb->common, p, mpi.mp, 0,
                                             &(*current_ptr)->dbterm,
-                                            ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE,
+                                            copy_results_to_process_heap,
                                             hpp, 2);
                 saved_current = *current_ptr;
                 if (on_match_res(context_ptr, slot_ix, &current_ptr, match_res)) {
                     ++got;
                 }
                 --iterations_left;
+                db_match_dbterm_free(p, copy_results_to_process_heap, match_res);
                 if (*current_ptr != saved_current) {
                     /* Don't advance to next, the callback did it already */
                     continue;
@@ -1486,14 +1490,15 @@ done:
  * Continue hash table match traversal
  */
 static int match_traverse_continue(Process* p, DbTableHash* tb,
-                                   Sint chunk_size,      /* If 0, no chunking */
-                                   Sint iterations_left, /* Nr. of iterations left */
-                                   Eterm** hpp,          /* Heap */
-                                   Sint slot_ix,         /* Slot index to resume traversal from */
-                                   Sint got,             /* Matched terms counter */
-                                   Binary** mpp,         /* Existing match program */
-                                   int lock_for_write,   /* Set to 1 if we're going to delete or
-                                                            modify existing terms */
+                                   Sint chunk_size,                  /* If 0, no chunking */
+                                   Sint iterations_left,             /* Nr. of iterations left */
+                                   Eterm** hpp,                      /* Heap */
+                                   Sint slot_ix,                     /* Slot index to resume traversal from */
+                                   Sint got,                         /* Matched terms counter */
+                                   Binary** mpp,                     /* Existing match program */
+                                   int copy_results_to_process_heap, /* Boolean */
+                                   int lock_for_write,               /* Set to 1 if we're going to delete or
+                                                                        modify existing terms */
                                    mtraversal_on_match_res_t on_match_res,
                                    mtraversal_on_loop_ended_t on_loop_ended,
                                    mtraversal_on_trap_t on_trap,
@@ -1549,13 +1554,14 @@ static int match_traverse_continue(Process* p, DbTableHash* tb,
             if ((*current_ptr)->hvalue != INVALID_HASH) {
                 match_res = db_match_dbterm(&tb->common, p, *mpp, all_objects,
                                             &(*current_ptr)->dbterm,
-                                            ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE,
+                                            copy_results_to_process_heap,
                                             hpp, 2);
                 saved_current = *current_ptr;
                 if (on_match_res(context_ptr, slot_ix, &current_ptr, match_res)) {
                     ++got;
                 }
                 --iterations_left;
+                db_match_dbterm_free(p, copy_results_to_process_heap, match_res);
                 if (*current_ptr != saved_current) {
                     /* Don't advance to next, the callback did it already */
                     continue;
@@ -1835,7 +1841,7 @@ static int db_select_chunk_hash(Process *p, DbTable *tbl, Eterm pattern, Sint ch
 
     return match_traverse(
             sc_context.p, sc_context.tb,
-            pattern, NULL,
+            pattern, NULL, 1,
             sc_context.chunk_size,
             MAX_SELECT_CHUNK_ITERATIONS,
             &sc_context.hp, 0,
@@ -1952,7 +1958,7 @@ static int db_select_continue_hash(Process* p, DbTable* tbl, Eterm continuation,
 
     return match_traverse_continue(
             sc_context.p, sc_context.tb, sc_context.chunk_size,
-            iterations_left, &sc_context.hp, slot_ix, got, &mp, 0,
+            iterations_left, &sc_context.hp, slot_ix, got, &mp, 1, 0,
             mtraversal_select_chunk_on_match_res, /* Reuse callback */
             mtraversal_select_chunk_continue_on_loop_ended,
             mtraversal_select_chunk_on_trap,      /* Reuse callback */
@@ -2023,7 +2029,7 @@ static int db_select_count_hash(Process *p, DbTable *tbl, Eterm pattern, Eterm *
 
     return match_traverse(
             scnt_context.p, scnt_context.tb,
-            pattern, NULL,
+            pattern, NULL, 1,
             chunk_size, iterations_left, NULL, 0,
             mtraversal_select_count_on_nothing_can_match,
             mtraversal_select_count_on_match_res,
@@ -2056,7 +2062,7 @@ static int db_select_count_continue_hash(Process* p, DbTable* tbl, Eterm continu
     return match_traverse_continue(
             scnt_context.p, scnt_context.tb, chunk_size,
             MAX_SELECT_COUNT_ITERATIONS,
-            NULL, slot_ix, got, &mp, 0,
+            NULL, slot_ix, got, &mp, 1, 0,
             mtraversal_select_count_on_match_res,  /* Reuse callback */
             mtraversal_select_count_on_loop_ended, /* Reuse callback */
             mtraversal_select_count_on_trap,       /* Reuse callback */
@@ -2159,7 +2165,7 @@ static int db_select_delete_hash(Process *p, DbTable *tbl, Eterm pattern, Eterm 
 
     return match_traverse(
             sd_context.p, sd_context.tb,
-            pattern, NULL,
+            pattern, NULL, 1,
             chunk_size,
             MAX_SELECT_DELETE_ITERATIONS, NULL, 1,
             mtraversal_select_delete_on_nothing_can_match,
@@ -2195,7 +2201,7 @@ static int db_select_delete_continue_hash(Process* p, DbTable* tbl, Eterm contin
     return match_traverse_continue(
             sd_context.p, sd_context.tb, chunk_size,
             MAX_SELECT_DELETE_ITERATIONS,
-            NULL, slot_ix, got, &mp, 1,
+            NULL, slot_ix, got, &mp, 1, 1,
             mtraversal_select_delete_on_match_res,  /* Reuse callback */
             mtraversal_select_delete_on_loop_ended, /* Reuse callback */
             mtraversal_select_delete_on_trap,       /* Reuse callback */
@@ -2297,7 +2303,7 @@ static int db_select_replace_hash(Process *p, DbTable *tbl, Eterm pattern, Eterm
 
     return match_traverse(
             sr_context.p, sr_context.tb,
-            pattern, db_match_keeps_key,
+            pattern, db_match_keeps_key, 0,
             chunk_size,
             MAX_SELECT_REPLACE_ITERATIONS, NULL, 1,
             mtraversal_select_replace_on_nothing_can_match,
@@ -2333,7 +2339,7 @@ static int db_select_replace_continue_hash(Process* p, DbTable* tbl, Eterm conti
     return match_traverse_continue(
             sr_context.p, sr_context.tb, chunk_size,
             MAX_SELECT_REPLACE_ITERATIONS,
-            NULL, slot_ix, got, &mp, 1,
+            NULL, slot_ix, got, &mp, 1, 1,
             mtraversal_select_replace_on_match_res,  /* Reuse callback */
             mtraversal_select_replace_on_loop_ended, /* Reuse callback */
             mtraversal_select_replace_on_trap,       /* Reuse callback */
@@ -2544,6 +2550,7 @@ static int db_free_table_continue_hash(DbTable *tbl)
 */
 static int analyze_pattern(DbTableHash *tb, Eterm pattern, 
                            extra_match_validator_t extra_validator, /* Optional callback */
+                           int copy_results_to_process_heap,        /* Boolean */
                            struct mp_info *mpi)
 {
     Eterm *ptpl;
@@ -2555,6 +2562,7 @@ static int analyze_pattern(DbTableHash *tb, Eterm pattern,
     HashValue hval = NIL;      
     int num_heads = 0;
     int i;
+    Uint compilation_flags = 0;
 
     mpi->lists = mpi->dlists;
     mpi->num_lists = 0;
@@ -2671,8 +2679,12 @@ static int analyze_pattern(DbTableHash *tb, Eterm pattern,
      * but then the select calls would not fail like they should on bad 
      * match specs that happen to specify non existent keys etc.
      */
+    compilation_flags = 
+        (copy_results_to_process_heap ?
+         DCOMP_TABLE : DCOMP_TRACE);
+
     if ((mpi->mp = db_match_compile(matches, guards, bodies,
-				    num_heads, DCOMP_TABLE, NULL)) 
+				    num_heads, compilation_flags, NULL)) 
 	== NULL) {
 	if (buff != sbuff) { 
 	    erts_free(ERTS_ALC_T_DB_TMP, buff);
