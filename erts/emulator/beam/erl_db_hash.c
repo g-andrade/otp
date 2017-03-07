@@ -1318,6 +1318,26 @@ typedef int (*mtraversal_on_loop_ended_t)(void* context_ptr, Sint slot_ix, Sint 
  */
 typedef int (*mtraversal_on_trap_t)(void* context_ptr, Sint slot_ix, Sint got, Binary** mpp, Eterm* ret);
 
+
+struct heapless_match_result_ctx {
+    HashDbTerm** saved_current_ptr;
+    HashDbTerm*** current_ptr_ptr;
+    mtraversal_on_match_res_t on_match_res;
+    void* on_match_res_ctx_ptr;
+    Sint slot_ix;
+    Sint* got_ptr;
+};
+
+typedef void (*mtraversal_heapless_match_result_cb)(Eterm res, void* context_ptr);
+
+static void hmr_cb(Eterm match_result, void* ctx_ptr) {
+    struct heapless_match_result_ctx* ctx = (struct heapless_match_result_ctx*) ctx_ptr;
+    *(ctx->saved_current_ptr) = **(ctx->current_ptr_ptr);
+    if (ctx->on_match_res(ctx->on_match_res_ctx_ptr, ctx->slot_ix, ctx->current_ptr_ptr, match_result)) {
+        ++(*(ctx->got_ptr));
+    }
+}
+
 /*
  * Begin hash table match traversal
  */
@@ -1413,13 +1433,31 @@ static int match_traverse(Process* p, DbTableHash* tb,
     for(;;) {
         if (*current_ptr != NULL) {
             if ((*current_ptr)->hvalue != INVALID_HASH) {
-                match_res = db_match_dbterm(&tb->common, p, mpi.mp, 0,
-                                            &(*current_ptr)->dbterm,
-                                            copy_results_to_process_heap,
-                                            hpp, 2, NULL, NULL);
-                saved_current = *current_ptr;
-                if (on_match_res(context_ptr, slot_ix, &current_ptr, match_res)) {
-                    ++got;
+                if (copy_results_to_process_heap) {
+                    match_res = db_match_dbterm(&tb->common, p, mpi.mp, 0,
+                                                &(*current_ptr)->dbterm,
+                                                copy_results_to_process_heap,
+                                                hpp, 2, NULL, NULL);
+                    saved_current = *current_ptr;
+                    if (on_match_res(context_ptr, slot_ix, &current_ptr, match_res)) {
+                        ++got;
+                    }
+                }
+                else {
+                    struct heapless_match_result_ctx hmr_ctx = {0};
+                    hmr_ctx.saved_current_ptr = &saved_current;
+                    hmr_ctx.current_ptr_ptr = &current_ptr;
+                    hmr_ctx.on_match_res = on_match_res;
+                    hmr_ctx.on_match_res_ctx_ptr = context_ptr;
+                    hmr_ctx.slot_ix = slot_ix;
+                    hmr_ctx.got_ptr = &got;
+                    db_match_dbterm(
+                            &tb->common, p, mpi.mp, 0,
+                            &(*current_ptr)->dbterm,
+                            copy_results_to_process_heap,
+                            hpp, 2, 
+                            hmr_cb,
+                            &hmr_ctx);
                 }
                 --iterations_left;
                 if (*current_ptr != saved_current) {
