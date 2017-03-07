@@ -941,11 +941,13 @@ Eterm copy_struct_x(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap, Uint 
                     " not equal to copy %T\n",
                     org_obj, res);
         }
-        if (htop != hbot)
+        if (htop != hbot) {
+            erts_fprintf(stderr, "org obj: %T\n", org_obj);
             erts_exit(ERTS_ABORT_EXIT,
                     "Internal error in copy_struct() when copying %T:"
                     " htop=%p != hbot=%p (sz=%beu)\n",
                     org_obj, htop, hbot, org_sz);
+        }
 #else
         if (htop > hbot) {
             erts_exit(ERTS_ABORT_EXIT,

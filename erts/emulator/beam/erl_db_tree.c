@@ -3354,11 +3354,10 @@ static int doit_select(DbTableTree *tb, TreeDbTerm *this, void *ptr,
     ret = db_match_dbterm(&tb->common,sc->p,sc->mp,sc->all_objects,
                           &this->dbterm,
                           copy_result_to_process_heap,
-                          &hp, 2);
+                          &hp, 2, NULL, NULL);
     if (is_value(ret)) {
 	sc->accum = CONS(hp, ret, sc->accum);
     }
-    db_match_dbterm_free(sc->p, copy_result_to_process_heap, ret);
     if (MBUF(sc->p)) {
 	/*
 	 * Force a trap and GC if a heap fragment was created. Many heap fragments
@@ -3390,11 +3389,10 @@ static int doit_select_count(DbTableTree *tb, TreeDbTerm *this, void *ptr,
     ret = db_match_dbterm(&tb->common, sc->p, sc->mp, 0,
                           &this->dbterm,
                           copy_result_to_process_heap,
-                          NULL, 0);
+                          NULL, 0, NULL, NULL);
     if (ret == am_true) {
 	++(sc->got);
     }
-    db_match_dbterm_free(sc->p, copy_result_to_process_heap, ret);
     if (--(sc->max) <= 0) {
 	return 0;
     }
@@ -3424,12 +3422,11 @@ static int doit_select_chunk(DbTableTree *tb, TreeDbTerm *this, void *ptr,
     ret = db_match_dbterm(&tb->common, sc->p, sc->mp, sc->all_objects,
                           &this->dbterm,
                           copy_result_to_process_heap,
-                          &hp, 2);
+                          &hp, 2, NULL, NULL);
     if (is_value(ret)) {
 	++(sc->got);
 	sc->accum = CONS(hp, ret, sc->accum);
     }
-    db_match_dbterm_free(sc->p, copy_result_to_process_heap, ret);
     if (MBUF(sc->p)) {
 	/*
 	 * Force a trap and GC if a heap fragment was created. Many heap fragments
@@ -3464,14 +3461,13 @@ static int doit_select_delete(DbTableTree *tb, TreeDbTerm *this, void *ptr,
     ret = db_match_dbterm(&tb->common, sc->p, sc->mp, 0,
                           &this->dbterm,
                           copy_result_to_process_heap,
-                          NULL, 0);
+                          NULL, 0, NULL, NULL);
     if (ret == am_true) {
 	key = GETKEY(sc->tb, this->dbterm.tpl);
 	linkout_tree(sc->tb, key);
 	sc->erase_lastterm = 1;
 	++sc->accum;
     }
-    db_match_dbterm_free(sc->p, copy_result_to_process_heap, ret);
     if (--(sc->max) <= 0) {
 	return 0;
     }
@@ -3498,8 +3494,8 @@ static int doit_select_replace(DbTableTree *tb, TreeDbTerm **this, void *ptr,
     }
     ret = db_match_dbterm(&tb->common, sc->p, sc->mp, 0,
                           &(*this)->dbterm,
-                          ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE,
-                          NULL, 0);
+                          copy_result_to_process_heap,
+                          NULL, 0, NULL, NULL);
 
     if (is_value(ret)) {
 #ifdef DEBUG
@@ -3510,7 +3506,6 @@ static int doit_select_replace(DbTableTree *tb, TreeDbTerm **this, void *ptr,
         sc->lastobj = (*this)->dbterm.tpl;
         ++(sc->replaced);
     }
-    db_match_dbterm_free(sc->p, copy_result_to_process_heap, ret);
     if (--(sc->max) <= 0) {
 	return 0;
     }

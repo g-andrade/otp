@@ -1416,13 +1416,12 @@ static int match_traverse(Process* p, DbTableHash* tb,
                 match_res = db_match_dbterm(&tb->common, p, mpi.mp, 0,
                                             &(*current_ptr)->dbterm,
                                             copy_results_to_process_heap,
-                                            hpp, 2);
+                                            hpp, 2, NULL, NULL);
                 saved_current = *current_ptr;
                 if (on_match_res(context_ptr, slot_ix, &current_ptr, match_res)) {
                     ++got;
                 }
                 --iterations_left;
-                db_match_dbterm_free(p, copy_results_to_process_heap, match_res);
                 if (*current_ptr != saved_current) {
                     /* Don't advance to next, the callback did it already */
                     continue;
@@ -1555,13 +1554,12 @@ static int match_traverse_continue(Process* p, DbTableHash* tb,
                 match_res = db_match_dbterm(&tb->common, p, *mpp, all_objects,
                                             &(*current_ptr)->dbterm,
                                             copy_results_to_process_heap,
-                                            hpp, 2);
+                                            hpp, 2, NULL, NULL);
                 saved_current = *current_ptr;
                 if (on_match_res(context_ptr, slot_ix, &current_ptr, match_res)) {
                     ++got;
                 }
                 --iterations_left;
-                db_match_dbterm_free(p, copy_results_to_process_heap, match_res);
                 if (*current_ptr != saved_current) {
                     /* Don't advance to next, the callback did it already */
                     continue;
@@ -2251,6 +2249,7 @@ static int mtraversal_select_replace_on_match_res(void* context_ptr, Sint slot_i
 #endif
         next = (**current_ptr_ptr)->next;
         hval = (**current_ptr_ptr)->hvalue;
+        erts_fprintf(stderr, "replacing existing object with %T\n", match_res);
         new = replace_dbterm(tb, **current_ptr_ptr, match_res);
         new->next = next;
         new->hvalue = hval;
@@ -2679,9 +2678,9 @@ static int analyze_pattern(DbTableHash *tb, Eterm pattern,
      * but then the select calls would not fail like they should on bad 
      * match specs that happen to specify non existent keys etc.
      */
-    compilation_flags = 
-        (copy_results_to_process_heap ?
-         DCOMP_TABLE : DCOMP_TRACE);
+    compilation_flags = DCOMP_TABLE;
+        //(copy_results_to_process_heap ?
+         //DCOMP_TABLE : DCOMP_TRACE);
 
     if ((mpi->mp = db_match_compile(matches, guards, bodies,
 				    num_heads, compilation_flags, NULL)) 

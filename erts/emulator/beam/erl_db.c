@@ -2928,7 +2928,9 @@ BIF_RETTYPE ets_match_spec_run_r_3(BIF_ALIST_3)
 	}
 	res = db_prog_match(BIF_P, BIF_P,
                             mp, CAR(list_val(lst)), NULL, 0,
-			    ERTS_PAM_COPY_RESULT, &dummy);
+			    ERTS_PAM_COPY_RESULT, 
+                            NULL, NULL,
+                            &dummy);
 	if (is_value(res)) {
 	    hp = HAlloc(BIF_P, 2);
 	    ret = CONS(hp,res,ret);

@@ -448,17 +448,25 @@ Binary *db_match_compile(Eterm *matchexpr, Eterm *guards,
 			 DMCErrInfo *err_info);
 /* Returns newly allocated MatchProg binary with refc == 0*/
 
+typedef void (*db_match_dbterm_result_cb_t)(Eterm match_result, void* context_ptr);
+
 Eterm db_match_dbterm(DbTableCommon* tb, Process* c_p, Binary* bprog,
                       int all, DbTerm* obj, int copy_result_to_process_heap,
-                      Eterm** hpp, Uint extra);
+                      Eterm** hpp, Uint extra, 
+                      db_match_dbterm_result_cb_t result_cb,
+                      void* result_cb_context_ptr);
 
-void db_match_dbterm_free(Process* c_p, int copy_result_to_process_heap, Eterm result);
+//void db_match_dbterm_free(Process* c_p, int copy_result_to_process_heap, Eterm result);
+
+typedef void (*db_prog_match_result_cb_t)(Eterm res, void* context_ptr);
 
 Eterm db_prog_match(Process *p, Process *self,
                     Binary *prog, Eterm term,
-		    Eterm *termp, int arity,
-		    enum erts_pam_run_flags in_flags,
-		    Uint32 *return_flags /* Zeroed on enter */);
+		            Eterm *termp, int arity,
+		            enum erts_pam_run_flags in_flags,
+                    db_prog_match_result_cb_t result_cb,
+                    void* result_cb_context_ptr,
+		            Uint32 *return_flags /* Zeroed on enter */);
 
 /* returns DB_ERROR_NONE if matches, 1 if not matches and some db error on 
    error. */

@@ -370,6 +370,7 @@ static ErtsMatchPseudoProcess *match_pseudo_process;
 static ERTS_INLINE void
 cleanup_match_pseudo_process(ErtsMatchPseudoProcess *mpsp, int keep_heap)
 {
+    erts_fprintf(stderr, "cleanup_match_pseudo_process %llx\n", mpsp);
     if (mpsp->process.mbuf || mpsp->process.off_heap.first) {
 	erts_cleanup_empty_process(&mpsp->process);
     }
@@ -446,6 +447,7 @@ get_match_pseudo_process(Process *c_p, Uint heap_size)
     else {
 	ASSERT(mpsp->u.heap == mpsp->default_heap);
     }
+    erts_fprintf(stderr, "get_match_pseudo_process %llx, %u\n", mpsp, heap_size);
     return mpsp;
 }
 
@@ -1409,8 +1411,9 @@ Eterm erts_match_set_run_trace(Process *c_p,
 {
     Eterm ret;
 
-    ret = db_prog_match(c_p, self, mpsp, NIL, args, num_args,
-			in_flags, return_flags);
+    ret = db_prog_match(
+            c_p, self, mpsp, NIL, args, num_args,
+            in_flags, NULL, NULL, return_flags);
 
     ASSERT(!(is_non_value(ret) && *return_flags));
 
@@ -1429,10 +1432,11 @@ static Eterm erts_match_set_run_ets(Process *p, Binary *mpsp,
 {
     Eterm ret;
 
-    ret = db_prog_match(p, p,
-                        mpsp, args, NULL, num_args,
-			ERTS_PAM_COPY_RESULT,
-			return_flags);
+    ret = db_prog_match(
+            p, p,
+            mpsp, args, NULL, num_args,
+            ERTS_PAM_COPY_RESULT,
+            NULL, NULL, return_flags);
 #if defined(HARDDEBUG)
     if (is_non_value(ret)) {
 	erts_fprintf(stderr, "Failed\n");
@@ -1923,19 +1927,22 @@ static Eterm dpm_array_to_list(Process *psp, Eterm *arr, int arity)
 
 /*
 ** Execution of the match program, this is Pam.
-** May return THE_NON_VALUE, which is a bailout.
+** May result in THE_NON_VALUE, which is a bailout.
 ** the parameter 'arity' is only used if 'term' is actually an array,
 ** i.e. 'DCOMP_TRACE' was specified 
 */
 Eterm db_prog_match(Process *c_p,
                     Process *self,
                     Binary *bprog,
-		    Eterm term,
-		    Eterm *termp,
-		    int arity,
-		    enum erts_pam_run_flags in_flags,
-		    Uint32 *return_flags)
+                    Eterm term,
+                    Eterm *termp,
+                    int arity,
+                    enum erts_pam_run_flags in_flags,
+                    db_prog_match_result_cb_t result_cb,
+                    void* result_cb_context_ptr,
+                    Uint32 *return_flags)
 {
+    erts_fprintf(stderr, "db_prog_match start\n");
     MatchProg *prog = Binary2MatchProg(bprog);
     const Eterm *ep, *tp, **sp;
     Eterm t;
@@ -2016,6 +2023,7 @@ restart:
     }
 #endif
 
+    erts_fprintf(stderr, "db_prog_match begin\n");
     for (;;) {
 
     #ifdef DMC_DEBUG
@@ -2707,15 +2715,18 @@ success:
 		 *stack_fence);
     }
 #endif
+   
+    if (result_cb != NULL)
+        result_cb(ret, result_cb_context_ptr);
 
     if (esdp)
         esdp->current_process = current_scheduled;
 
-    return ret;
+    erts_fprintf(stderr, "db_prog_match end\n");
+    return (result_cb == NULL ? ret : NIL);
 #undef FAIL
 #undef FAIL_TERM
 }
-
 
 DMCErrInfo *db_new_dmc_err_info(void) 
 {
@@ -3088,6 +3099,7 @@ void* db_store_term(DbTableCommon *tb, DbTerm* old, Uint offset, Eterm obj)
     newp->size = size;
     top = newp->tpl;
     tmp_offheap.first  = NULL;
+    erts_fprintf(stderr, "storing: %T\n", obj);
     copy_struct(obj, size, &top, &tmp_offheap);
     newp->first_oh = tmp_offheap.first;
 #ifdef DEBUG_CLONE
@@ -5324,12 +5336,62 @@ void db_free_tmp_uncompressed(DbTerm* obj)
     erts_free(ERTS_ALC_T_TMP, obj);
 }
 
-Eterm db_match_dbterm(DbTableCommon* tb, Process* c_p, Binary* bprog,
-                      int all, DbTerm* obj, int copy_result_to_process_heap,
-                      Eterm** hpp, Uint extra)
+struct db_match_dbterm_wrapper_result_cb_context {
+    DbTableCommon* tb;
+    Process* c_p;
+    DbTerm* obj;
+    int copy_result_to_process_heap;
+    Eterm** hpp;
+    Uint extra;
+    db_match_dbterm_result_cb_t result_cb;
+    void* result_cb_context_ptr;
+};
+
+static void db_match_dbterm_finish(
+        DbTableCommon* tb, Process* c_p,
+        DbTerm* obj,
+        int copy_result_to_process_heap,
+        Eterm** hpp, Uint extra,
+        Eterm match_result
+        ) 
 {
-    Uint32 dummy;
-    Eterm res;
+    if (is_value(match_result) && hpp!=NULL && copy_result_to_process_heap) {
+        *hpp = HAlloc(c_p, extra);
+    }
+    
+    if (tb->compress) {
+        db_free_tmp_uncompressed(obj);
+    }
+}
+
+
+static void db_match_dbterm_wrapper_result_cb(Eterm match_result, void* context_ptr) {
+    struct db_match_dbterm_wrapper_result_cb_context* ctx = NULL;
+    ctx = (struct db_match_dbterm_wrapper_result_cb_context*) context_ptr;
+
+    db_match_dbterm_finish(
+            ctx->tb,
+            ctx->c_p,
+            ctx->obj,
+            ctx->copy_result_to_process_heap,
+            ctx->hpp,
+            ctx->extra,
+            match_result);
+    
+    ctx->result_cb(match_result, ctx->result_cb_context_ptr);
+}
+
+Eterm db_match_dbterm(DbTableCommon* tb, Process* c_p, Binary* bprog,
+                     int all, DbTerm* obj, int copy_result_to_process_heap,
+                     Eterm** hpp, Uint extra,
+                     db_match_dbterm_result_cb_t result_cb,
+                     void* result_cb_context_ptr)
+{
+    erts_fprintf(stderr, "db_match_dbterm start\n");
+    Uint32 dummy = 0;
+    Eterm match_result = NIL;
+    Eterm ret = NIL;
+    struct db_match_dbterm_wrapper_result_cb_context wrapper_cb_context = {0};
     enum erts_pam_run_flags pam_run_flags
         = (copy_result_to_process_heap ?
                 ERTS_PAM_COPY_RESULT|ERTS_PAM_CONTIGUOUS_TUPLE :
@@ -5339,30 +5401,57 @@ Eterm db_match_dbterm(DbTableCommon* tb, Process* c_p, Binary* bprog,
 	obj = db_alloc_tmp_uncompressed(tb, obj);
     }
 
-    res = db_prog_match((copy_result_to_process_heap ? c_p : NULL), 
-                        (copy_result_to_process_heap ? c_p : NULL),
-                        bprog, make_tuple(obj->tpl), NULL, 0,
-                        pam_run_flags, &dummy);
+    if (result_cb == NULL) { 
+        match_result =
+            db_prog_match(
+                (copy_result_to_process_heap ? c_p : NULL), 
+                (copy_result_to_process_heap ? c_p : NULL),
+                bprog, make_tuple(obj->tpl), NULL, 0,
+                pam_run_flags, 
+                NULL,
+                NULL,
+                &dummy);
+        db_match_dbterm_finish(
+                tb,
+                c_p,
+                obj,
+                copy_result_to_process_heap,
+                hpp,
+                extra,
+                match_result);
+        ret = match_result;
+    }
+    else {
+        ret = NIL;
+        wrapper_cb_context.tb = tb;
+        wrapper_cb_context.c_p = c_p;
+        wrapper_cb_context.obj = obj;
+        wrapper_cb_context.copy_result_to_process_heap = copy_result_to_process_heap;
+        wrapper_cb_context.hpp = hpp;
+        wrapper_cb_context.extra = extra;
+        wrapper_cb_context.result_cb = result_cb;
+        wrapper_cb_context.result_cb_context_ptr = result_cb_context_ptr;
 
-    if (is_value(res) && hpp!=NULL && copy_result_to_process_heap) {
-	*hpp = HAlloc(c_p, extra);
+        db_prog_match(
+                (copy_result_to_process_heap ? c_p : NULL), 
+                (copy_result_to_process_heap ? c_p : NULL),
+                bprog, make_tuple(obj->tpl), NULL, 0,
+                pam_run_flags, 
+                db_match_dbterm_wrapper_result_cb,
+                &wrapper_cb_context,
+                &dummy);
     }
 
-    if (tb->compress) {
-	db_free_tmp_uncompressed(obj);
-    }
-   
-    if (!copy_result_to_process_heap)
-        erts_fprintf(stderr, "match res: %T\n", res);
-    return res;
+    erts_fprintf(stderr, "db_match_dbterm end\n--------------\n");
+    return ret;
 }
 
-void db_match_dbterm_free(Process* c_p, int copy_result_to_process_heap, Eterm result) {
-    if (copy_result_to_process_heap && is_value(result)) {
-        // TODO
-        erts_match_set_release_result(c_p);
-    }
-}
+//void db_match_dbterm_free(Process* c_p, int copy_result_to_process_heap, Eterm result) {
+//    if (copy_result_to_process_heap && is_value(result)) {
+//        // TODO
+//        //erts_match_set_release_result(c_p);
+//    }
+//}
 
 #ifdef DMC_DEBUG
 
