@@ -86,8 +86,8 @@ groups() ->
        api_inflateInit, api_inflateSetDictionary, api_inflateGetDictionary,
        api_inflateSync, api_inflateReset, api_inflate, api_inflateChunk,
        api_inflateEnd, api_setBufsz, api_getBufsz, api_crc32,
-       api_adler32, api_getQSize, api_un_compress, api_un_zip,
-       api_g_un_zip]},
+       api_adler32, api_getQSize, api_un_compress, api_un_compress_with_explicit_buffer,
+       api_un_zip, api_g_un_zip]},
      {examples, [], [intro]},
      {func, [],
       [zip_usage, gz_usage, gz_usage2, compress_usage,
@@ -517,6 +517,14 @@ api_un_compress(Config) when is_list(Config) ->
     ?m({'EXIT',{data_error,_}}, zlib:uncompress(<<0,156,3,0,0,0,0,1>>)),
     ?m(Bin, zlib:uncompress(binary_to_list(Comp))),
     ?m(Bin, zlib:uncompress(Comp)).
+
+%% Test uncompressing using explicit buffer sizes
+api_un_compress_with_explicit_buffer(Config) when is_list(Config) ->
+    Bin = list_to_binary(lists:seq(1, 32)),
+    Comp = zlib:compress(Bin),
+    ?m({'EXIT',{buf_size,_}}, zlib:uncompress(Comp, [{buf_size, size(Bin) - 1}])),
+    ?m(Bin, zlib:uncompress(Comp, [{buf_size, size(Bin)}])),
+    ?m(Bin, zlib:uncompress(Comp, [{buf_size, size(Bin) + 1}])).
 
 %% Test zip.
 api_un_zip(Config) when is_list(Config) ->

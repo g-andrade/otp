@@ -30,7 +30,7 @@
 	 setBufSize/2,getBufSize/1,
 	 crc32/1,crc32/2,crc32/3,adler32/2,adler32/3,getQSize/1,
 	 crc32_combine/4,adler32_combine/4,
-	 compress/1,uncompress/1,zip/1,unzip/1,
+	 compress/1,uncompress/1,uncompress/2,zip/1,unzip/1,
 	 gzip/1,gunzip/1]).
 
 -export_type([zstream/0, zlevel/0, zwindowbits/0, zmemlevel/0, zstrategy/0]).
@@ -59,6 +59,7 @@
 -define(Z_NULL, 0).
 
 -define(MAX_WBITS, 15).
+-define(MIN_INFLATE_BUFSZ, 16). % from zlib_drv.c
 
 %% gzip defs (rfc 1952)
 
@@ -411,19 +412,23 @@ compress(Data) ->
       Data  :: iodata(),
       Decompressed :: binary().
 uncompress(Data) ->
-    try iolist_size(Data) of
-        Size ->
+    uncompress(Data, []).
+
+-spec uncompress(Data, [Opt]) -> Decompressed when
+      Data  :: iodata(),
+      Opt :: {buf_size, non_neg_integer()},
+      Decompressed :: binary().
+uncompress(Data, Opts) ->
+    try {iolist_size(Data), proplists:get_value(buf_size, Opts)} of
+        {Size, BufSize}->
             if
                 Size >= 8 ->
                     Z = open(),
-		    Bs = try
-			     inflateInit(Z),
-			     B = inflate(Z, Data),
-			     inflateEnd(Z),
-			     B
-			 after
-			     close(Z)
-			 end,
+                    Bs = try
+                             uncompress_(Z, Data, BufSize)
+                         after
+                             close(Z)
+                         end,
                     iolist_to_binary(Bs);
                 true ->
                     erlang:error(data_error)
@@ -574,3 +579,20 @@ reverse([H|T], Y) ->
     reverse(T, [H|Y]);
 reverse([], X) -> 
     X.
+
+-spec uncompress_(zstream(), iodata(), undefined | non_neg_integer()) -> iodata().
+uncompress_(Z, Data, undefined) ->
+    inflateInit(Z),
+    B = inflate(Z, Data),
+    inflateEnd(Z),
+    B;
+uncompress_(Z, Data, BufSize) ->
+    inflateInit(Z),
+    setBufSize(Z, max(?MIN_INFLATE_BUFSZ, BufSize)),
+    case inflateChunk(Z, Data) of
+        {more, _B} ->
+            erlang:error(buf_size);
+        B ->
+            inflateEnd(Z),
+            B
+    end.
